@@ -56,13 +56,13 @@ else:
 
     # Define Google Drive file IDs
     file_ids = {
-        "xgb_model": "1u_lABge8raBhST7PRJ3SiK580X2YykDy",
-        "rf_model": "1LVxpoUhuzM2FyZbmhogiK74c8InJ_-JL",
-        "logreg_model": "1LVxpoUhuzM2FyZbmhogiK74c8InJ_-JL",
-        "scaler": "1sh9D1sMUT07oJ-F4DcZKAzKN4IsKTjfv",
-        "final_table": "1GZxktRcIr7OjxNXG_CCEzJ2dWvgeH9Bz",
-        "X_test": "1Zjh-o0dqnfm_R3qWo3CdixhLi4j7YAJi",
-        "y_test": "1izmgtZej0dAvcnp9sWXyHLAtDXN7rbEj"
+        "xgb_model": "1Cg7uHDK6NHESc9CZnlOj9H-B9C_4-eqC",
+        "rf_model": "1R_wyGXaIvlz41Nr3NYGNsS-BdUCcSfZE",
+        "logreg_model": "1qnhYMvLxkO45f9ZZ82VSDill98VCXP0j",
+        "training_features": "1ngeoV5hpluHeCPdmGTEdjOfviH0x3PfU",
+        "final_table": "1stX1gW9kkbkR3hSIrBvRJLv_W7D7RYI4",
+        "X_test": "1Ldnd25jmb9Ary9ZlQMDgyKpglSlrsSRx",
+        "y_test": "1FzEk8AN_WjsabKcR92WvcShZQ-yY5xye"
     }
 
     # Download all necessary files
@@ -81,11 +81,11 @@ else:
     models = load_models()
     xgb_model, rf_model, logreg_model = models["xgb"], models["rf"], models["logreg"]
 
-    # Load scaler
+    # Load training features
     try:
-        scaler = joblib.load("scaler.pkl")
+        training_features = joblib.load("training_features.pkl")
     except FileNotFoundError:
-        scaler = None  # Handle missing scaler gracefully
+        training_features = None  # Handle missing training_features gracefully
 
     # Load dataset
     df = pd.read_csv("final_table.csv")
@@ -112,7 +112,7 @@ else:
     selected_gender = st.sidebar.selectbox("Select Gender", genders)
 
     age_range = st.sidebar.slider("Select Age Range", int(df["age"].min()), int(df["age"].max()), (25, 50))
-    tenure_range = st.sidebar.slider("Select Tenure Range (Years)", 0, 16, (2, 10))
+    tenure_range = st.sidebar.slider("Select Tenure Range (Years)", 0, 29, (2, 10))
 
     performance_ratings = ["All"] + sorted(df["last_performance_rating"].dropna().unique().tolist())
     selected_rating = st.sidebar.selectbox("Select Performance Rating", ["All"] + performance_ratings)
@@ -238,11 +238,31 @@ else:
     # ------------------- Model Performance Evaluation -------------------
     st.subheader("📈 Model Performance")
 
+    def preprocess_test_data(X_test, training_features):
+        categorical_features = ['emp_title_id', 'sex', 'title']
+
+        # Ensure only available categorical features are encoded
+        available_categorical_features = [col for col in categorical_features if col in X_test.columns]
+
+        if available_categorical_features:
+            X_test = pd.get_dummies(X_test, columns=available_categorical_features, drop_first=True)
+
+        # 🔄 Ensure test data has the same feature columns as training data
+        for feature in training_features:
+            if feature not in X_test.columns:
+                X_test[feature] = False if feature.startswith("emp_title_id") else 0  # Handle missing dummies
+
+        # 🗑 Drop any extra columns not in training_features
+        X_test = X_test[training_features]
+
+        return X_test
+
     def evaluate_model(model, model_name):
         X_test = joblib.load("X_test.pkl")
         y_test = joblib.load("y_test.pkl")
 
-        X_test = X_test.to_numpy()
+        # Preprocess test data to match training features
+        X_test = preprocess_test_data(X_test, training_features)
 
         y_pred = model.predict(X_test)
         y_prob = model.predict_proba(X_test)[:, 1]
@@ -278,6 +298,9 @@ else:
         ax.set_title(f"{model_name} - ROC Curve")
         ax.legend()
         st.pyplot(fig)
+
+    # Load training features list
+    training_features = joblib.load("training_features.pkl")
 
     evaluate_model(xgb_model, "XGBoost")
     evaluate_model(rf_model, "Random Forest")
