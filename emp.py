@@ -53,11 +53,11 @@ else:
 
     # Define Google Drive file IDs
     file_ids = {
-        "xgb_model": "1u_lABge8raBhST7PRJ3SiK580X2YykDy",
-        "rf_model": "1LVxpoUhuzM2FyZbmhogiK74c8InJ_-JL",
-        "logreg_model": "1LVxpoUhuzM2FyZbmhogiK74c8InJ_-JL",
-        "scaler": "1sh9D1sMUT07oJ-F4DcZKAzKN4IsKTjfv",
-        "final_table": "1GZxktRcIr7OjxNXG_CCEzJ2dWvgeH9Bz"
+        "xgb_model": "1Cg7uHDK6NHESc9CZnlOj9H-B9C_4-eqC",
+        "rf_model": "1R_wyGXaIvlz41Nr3NYGNsS-BdUCcSfZE",
+        "logreg_model": "1qnhYMvLxkO45f9ZZ82VSDill98VCXP0j",
+        "training_features": "1ngeoV5hpluHeCPdmGTEdjOfviH0x3PfU",
+        "final_table": "1stX1gW9kkbkR3hSIrBvRJLv_W7D7RYI4"
     }
 
     # Download all necessary files
@@ -76,11 +76,11 @@ else:
     models = load_models()
     xgb_model, rf_model, logreg_model = models["xgb"], models["rf"], models["logreg"]
 
-    # Load scaler
+    # Load training features
     try:
-        scaler = joblib.load("scaler.pkl")
+        training_features = joblib.load("training_features.pkl")
     except FileNotFoundError:
-        scaler = None  # Handle missing scaler gracefully
+        training_features = None  # Handle missing training_features gracefully
 
 
     # Load dataset
@@ -91,12 +91,13 @@ else:
 
     # Sidebar - User Input
     st.sidebar.header("⚙️ Prediction Inputs")
-    tenure = st.sidebar.slider("Years at Company", 0, 16, 5)
-    age = st.sidebar.slider("Age", 20, 50, 30)
-    salary = st.sidebar.number_input("Salary", min_value=40000, max_value=122000, value=50000)
-    no_of_projects = st.sidebar.slider("Number of Projects", 1, 10, 5)
+    tenure = st.sidebar.slider("Years at Company", 0, 29, 10)
+    age = st.sidebar.slider("Age", 20, 61, 35)
+    salary = st.sidebar.number_input("Salary", min_value=40000, max_value=122000, value=80000)
+    no_of_projects = st.sidebar.slider("Number of Projects", 1, 10, 7)
     performance_ratings = ['PIP', 'S', 'C', 'B', 'A']
     genders = ["M", "F"]
+    emp_title_id = st.sidebar.selectbox("Job Title ID", df["emp_title_id"].unique().tolist())
     titles = df["title"].unique().tolist() if "title" in df.columns else ["Engineer", "Manager", "Staff"]
     # Extract unique department values
     departments = sorted(df['primary_dept_name'].dropna().unique())
@@ -122,6 +123,7 @@ else:
             "sex": [sex],
             "primary_dept": [primary_dept],
             "other_dept": [other_dept],
+            "emp_title_id": [emp_title_id],
             "title": [title]
         })
 
@@ -130,24 +132,22 @@ else:
         input_data['last_performance_rating'] = input_data['last_performance_rating'].map(performance_order).fillna(0).astype(int)
         
         # One-hot encode categorical variables dynamically
-        categorical_features = ['sex', 'title']
+        categorical_features = ['emp_title_id', 'sex', 'title']
         input_data = pd.get_dummies(input_data, columns=categorical_features, dtype=bool)
 
         # Ensure input data matches model features
-        model_features = list(xgb_model.get_booster().feature_names)  # Get trained feature names
-        missing_cols = set(model_features) - set(input_data.columns)
-        for col in missing_cols:
-            input_data[col] = False  # Add missing columns with default values
-        input_data = input_data[model_features]  # Reorder to match model
+        if training_features is not None:
+            for feature in training_features:
+                if feature not in input_data.columns:
+                    input_data[feature] = False if feature.startswith(('emp_title_id_', 'sex_', 'title_')) else 0  # Default values
 
-        # Scale numerical columns
-        if scaler:
-            input_data[input_data.columns] = scaler.transform(input_data[input_data.columns])
-
+            # Reorder columns to match training features
+            input_data = input_data[training_features]
+            
         # Predict probabilities
         xgb_prob = xgb_model.predict_proba(input_data)[:, 1]
         rf_prob = rf_model.predict_proba(input_data)[:, 1]
-        logreg_prob = logreg_model.predict_proba(input_data.to_numpy())[:, 1]
+        logreg_prob = logreg_model.predict_proba(input_data)[:, 1]
 
         # Ensemble Prediction (Threshold tuned at 0.4)
         threshold = 0.4
@@ -192,13 +192,19 @@ else:
         rf_prob = rf_prob.item() if isinstance(rf_prob, np.ndarray) else float(rf_prob)
         logreg_prob = logreg_prob.item() if isinstance(logreg_prob, np.ndarray) else float(logreg_prob)
 
+        # Round to 2 decimal places
+        probabilities = [round(xgb_prob, 2), round(rf_prob, 2), round(logreg_prob, 2)]
+        models = ["XGBoost", "Random Forest", "Logistic Regression"]
+
         fig = px.bar(
-            x=["XGBoost", "Random Forest", "Logistic Regression"],
-            y=[xgb_prob, rf_prob, logreg_prob],
+            x=models,
+            y=probabilities,
             labels={"x": "Model", "y": "Predicted Probability"},
             title="Model Probability Comparison",
+            text=probabilities,
             color=["XGBoost", "Random Forest", "Logistic Regression"]
         )
+        fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
         st.plotly_chart(fig)
 
 
