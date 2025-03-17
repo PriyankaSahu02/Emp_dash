@@ -58,3 +58,7 @@ To deploy the app using **Streamlit Cloud**, follow these steps:
 1. Push your code to a GitHub repository.
 2. Go to [Streamlit Community Cloud](https://share.streamlit.io/).
 3. Connect your GitHub repository and deploy your app.
+
+## 🔗 Live Demo
+Employee Attrition Prediction: https://empdash-p.streamlit.app/
+Employee Dashboard: https://empdash-p2.streamlit.app/
